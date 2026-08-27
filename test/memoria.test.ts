@@ -1,3 +1,5 @@
+export {};
+
 function criarPropertiesServiceMock() {
   const store = new Map<string, string>();
   const props = {

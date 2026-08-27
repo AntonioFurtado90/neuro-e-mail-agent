@@ -12,7 +12,8 @@
 // CONFIGURAÇÃO
 // ─────────────────────────────────────────
 
-const JANELA_MINUTOS = 1440;    // intervalo do monitoramento contínuo
+const LOTE_TAMANHO             = 100; // threads por chamada de busca
+const MAX_THREADS_POR_EXECUCAO = 300; // teto por execucao (evita estourar o limite de 6 min do Apps Script)
 const K_VIZINHOS       = 3;     // vizinhos no k-NN
 const MIN_SIMILARIDADE = 0.25;  // limiar mínimo para usar memória
 const MAX_MEMORIA      = 500;   // máx de entradas na memória
@@ -242,25 +243,42 @@ function processarThread(thread, memoria) {
 // FASE 1 — MONITORAMENTO CONTÍNUO (10 min)
 // ─────────────────────────────────────────
 
-function categorizarEmailsNovos() {
-  const limite  = new Date(Date.now() - JANELA_MINUTOS * 60 * 1000);
-  const data    = Utilities.formatDate(limite, Session.getScriptTimeZone(), 'yyyy/MM/dd');
-  const threads = GmailApp.search(`in:inbox after:${data} -in:trash`, 0, 50);
-  if (!threads.length) return;
+// Threads que ja tem alguma label de categoria ja foram processadas -
+// exclui-las da busca substitui o antigo filtro por data, o que
+// tambem permite ao agente ir processando o backlog de e-mails
+// antigos aos poucos, nao so e-mails novos.
+function construirQueryNaoProcessados() {
+  const exclusoes = Object.keys(PRIORIDADE_PADRAO)
+    .map(categoria => `-label:"${categoria}"`)
+    .join(' ');
+  return `in:inbox -in:trash ${exclusoes}`;
+}
 
-  let memoria = carregarMemoria();
-  for (const thread of threads) {
-    try {
-      processarThread(thread, memoria);
-    } catch (e) {
-      console.error(`Erro: ${e.message}`);
+function categorizarEmailsNovos() {
+  const query   = construirQueryNaoProcessados();
+  const memoria = carregarMemoria();
+  let processados = 0;
+  let lote;
+
+  do {
+    lote = GmailApp.search(query, 0, LOTE_TAMANHO);
+    for (const thread of lote) {
+      try {
+        processarThread(thread, memoria);
+      } catch (e) {
+        console.error(`Erro: ${e.message}`);
+      }
+      processados++;
     }
-  }
+  } while (lote.length === LOTE_TAMANHO && processados < MAX_THREADS_POR_EXECUCAO);
+
   try {
     salvarMemoria(memoria);
   } catch (e) {
     console.error(`Erro ao salvar memória: ${e.message}`);
   }
+
+  if (processados) console.log(`✅ ${processados} thread(s) categorizada(s)`);
 }
 
 // ─────────────────────────────────────────
@@ -396,7 +414,7 @@ function configurarTriggers() {
 
   // Novos e-mails — a cada 10 min
   ScriptApp.newTrigger('categorizarEmailsNovos')
-    .timeBased().everyDays(1).atHour(8).create();
+    .timeBased().everyMinutes(10).create();
 
   // Arquivo + limpeza — todo domingo às 3h
   ScriptApp.newTrigger('rodinaSemanal')
@@ -469,5 +487,7 @@ if (typeof module !== 'undefined') {
     calcularSimilaridade,
     consultarKNN,
     classificarEmail,
+    construirQueryNaoProcessados,
+    categorizarEmailsNovos,
   };
 }
