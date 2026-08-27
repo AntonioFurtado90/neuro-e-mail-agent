@@ -9,6 +9,37 @@ Automação (Google Apps Script) para triagem diária da caixa de entrada do Gma
 
 Não é necessário instalar nada globalmente: todas as dependências (`clasp`, `typescript`, `jest`, etc.) ficam em `node_modules/` e são chamadas via `npx`/scripts do `npm`.
 
+## Diagnóstico do script legado (por que ~4 mil e-mails acumularam)
+
+Análise de [`src/Código.js`](src/Código.js) como foi clonado do Apps Script, antes de qualquer alteração. Três problemas — provavelmente combinados — explicam o script ter parado de categorizar/arquivar e-mails novos:
+
+### Bug A — `salvarMemoria` estoura o limite de tamanho do PropertiesService (causa mais provável da parada total)
+
+`salvarMemoria` (linhas 100-104) grava a memória de classificação inteira (até `MAX_MEMORIA = 500` entradas) numa única Script Property (`EMAIL_MEMORIA`). O Apps Script limita cada valor de propriedade a 9KB. A própria função `importarMemoria` (linhas 412-420) existe porque alguém já bateu nesse limite antes: ela importa 200 entradas manualmente **divididas em 5 chunks** (`EMAIL_MEMORIA_0`..`_4`) — só que `carregarMemoria`/`salvarMemoria` nunca leem essas chaves, só `EMAIL_MEMORIA`. A gravação real (não fragmentada) provavelmente excede 9KB rapidamente, `setProperty` lança exceção, e essa chamada fica **fora** do `try/catch` de `categorizarEmailsNovos` (linhas 218-233) — o catch só envolve `processarThread`, não `salvarMemoria`. Isso derruba a execução inteira do trigger.
+
+**Evidência**: nos próprios dados importados em `importarMemoria`, várias entradas são e-mails do próprio Google com assunto "summary of failures for Google Apps Script" — ou seja, o script já vinha recebendo avisos de falha recorrente do trigger. O Apps Script desabilita automaticamente um trigger depois de falhar repetidamente, o que bate com "o script parou de funcionar".
+
+**Correção proposta**: gravar a memória em chunks (como `importarMemoria` já faz manualmente) e envolver `salvarMemoria` em `try/catch` para nunca derrubar o trigger inteiro.
+
+### Bug B — throughput muito abaixo do volume real de e-mails
+
+O comentário e o log dizem "a cada 10 min" (linhas 215 e 374), mas o trigger real criado em `configurarTriggers` (linhas 367-368) roda **uma vez por dia**, às 8h. Cada execução processa no máximo **50 threads** (linha 221: `GmailApp.search(..., 0, 50)`). Se chegam mais de 50 e-mails novos num dia, o excedente nunca é sequer tentado — fica acumulando na inbox.
+
+**Correção proposta**: trigger a cada 10 min de fato (como o código já diz que faz) e paginação da busca em vez de truncar em 50 (mesmo padrão `do/while` já usado em `arquivarEmailsLidos`).
+
+### Bug C — memória "importada" nunca é usada
+
+Consequência direta do Bug A: como `EMAIL_MEMORIA_0..4` nunca é lido pelo código real, o k-NN roda praticamente sempre a frio, caindo sempre no fallback de regras fixas em vez de aprender com o histórico.
+
+**Correção proposta**: depois do fix do Bug A, migrar os dados de `EMAIL_MEMORIA_0..4` para o novo formato, para não perder as 200 entradas já existentes.
+
+### Plano de trabalho
+
+1. Corrigir Bug A (gravação em chunks + `try/catch`), com testes.
+2. Corrigir Bug B (trigger de 10 em 10 min + paginação), com testes.
+3. Migrar a memória já importada para o novo formato.
+4. Cobertura de testes: `extrairTokens`, `calcularSimilaridade`, `consultarKNN` e `classificarEmail` já são funções puras (sem `GmailApp`/`PropertiesService` direto) — testáveis com Jest sem mock nenhum. As demais (`aplicarCategoria`, `arquivarEmailsLidos` etc.) exigem mockar `GmailApp`/`PropertiesService`/`ScriptApp`.
+
 ## Configuração do ambiente
 
 ```bash
