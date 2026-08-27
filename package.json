@@ -9,7 +9,7 @@
     "pull": "clasp pull",
     "push": "clasp push",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src test --ext .ts",
+    "lint": "eslint src test --ext .ts --no-error-on-unmatched-pattern",
     "test": "jest"
   },
   "devDependencies": {
