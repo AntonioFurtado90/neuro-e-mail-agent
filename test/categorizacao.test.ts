@@ -17,6 +17,7 @@ function criarPropertiesServiceMock() {
 function criarThreadFake(id: number, quebrado = false) {
   return {
     id,
+    getId: () => String(id),
     getMessages: () => {
       if (quebrado) throw new Error(`thread ${id} quebrada`);
       return [
