@@ -8,7 +8,7 @@
     "clone": "clasp clone",
     "pull": "clasp pull",
     "push": "clasp push",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.jest.json",
     "lint": "eslint src test --ext .ts --no-error-on-unmatched-pattern",
     "test": "jest"
   },
@@ -16,6 +16,7 @@
     "@google/clasp": "^2.4.2",
     "@types/google-apps-script": "^1.0.83",
     "@types/jest": "^29.5.12",
+    "@types/node": "^20.12.7",
     "@typescript-eslint/eslint-plugin": "^7.7.0",
     "@typescript-eslint/parser": "^7.7.0",
     "eslint": "^8.57.0",
