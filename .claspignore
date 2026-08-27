@@ -1,23 +1,8 @@
-# Nada disso deve ser enviado ao Google via `clasp push` -
-# sao arquivos de tooling/infra do repositorio, nao do script.
+# O clasp resolve estes padroes de forma relativa ao rootDir (src/),
+# nao a raiz do repositorio. Bloqueia tudo e libera so o que deve
+# mesmo ir para o Google: o manifesto e o codigo do script (.js hoje,
+# .ts depois da migracao).
 **/**
-!src/**/*.ts
 !appsscript.json
-
-.clasp.json
-.clasp.json.example
-.claspignore
-.env
-.env.example
-.git/**
-.github/**
-.gitignore
-.nvmrc
-CLAUDE.md
-README.md
-node_modules/**
-package.json
-package-lock.json
-tsconfig.json
-test/**
-dist/**
+!**/*.js
+!**/*.ts
