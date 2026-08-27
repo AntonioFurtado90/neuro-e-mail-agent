@@ -92,15 +92,42 @@ const CATEGORIAS_AVISAR = [
 // MEMÓRIA (k-NN)
 // ─────────────────────────────────────────
 
+// PropertiesService limita cada valor a 9KB — a memoria e guardada em
+// pedacos (EMAIL_MEMORIA_0, EMAIL_MEMORIA_1, ...) para nao estourar esse
+// limite. EMAIL_MEMORIA_CHUNKS guarda quantos pedacos existem.
+const MEMORIA_CHAVE_PREFIXO = 'EMAIL_MEMORIA';
+const MEMORIA_CHAVE_CHUNKS  = 'EMAIL_MEMORIA_CHUNKS';
+const MEMORIA_TAMANHO_CHUNK = 8000; // margem de seguranca abaixo do limite de 9KB
+
 function carregarMemoria() {
-  const raw = PropertiesService.getScriptProperties().getProperty('EMAIL_MEMORIA');
-  return raw ? JSON.parse(raw) : [];
+  const props      = PropertiesService.getScriptProperties();
+  const totalChunks = parseInt(props.getProperty(MEMORIA_CHAVE_CHUNKS) || '0', 10);
+  if (!totalChunks) return [];
+
+  let json = '';
+  for (let i = 0; i < totalChunks; i++) {
+    json += props.getProperty(`${MEMORIA_CHAVE_PREFIXO}_${i}`) || '';
+  }
+  return json ? JSON.parse(json) : [];
 }
 
 function salvarMemoria(memoria) {
   if (memoria.length > MAX_MEMORIA) memoria = memoria.slice(-MAX_MEMORIA);
-  PropertiesService.getScriptProperties()
-    .setProperty('EMAIL_MEMORIA', JSON.stringify(memoria));
+  const props = PropertiesService.getScriptProperties();
+
+  const totalChunksAntigo = parseInt(props.getProperty(MEMORIA_CHAVE_CHUNKS) || '0', 10);
+
+  const json   = JSON.stringify(memoria);
+  const chunks = [];
+  for (let i = 0; i < json.length; i += MEMORIA_TAMANHO_CHUNK) {
+    chunks.push(json.slice(i, i + MEMORIA_TAMANHO_CHUNK));
+  }
+
+  chunks.forEach((chunk, i) => props.setProperty(`${MEMORIA_CHAVE_PREFIXO}_${i}`, chunk));
+  for (let i = chunks.length; i < totalChunksAntigo; i++) {
+    props.deleteProperty(`${MEMORIA_CHAVE_PREFIXO}_${i}`);
+  }
+  props.setProperty(MEMORIA_CHAVE_CHUNKS, String(chunks.length));
 }
 
 function extrairTokens(remetente, assunto) {
@@ -229,7 +256,11 @@ function categorizarEmailsNovos() {
       console.error(`Erro: ${e.message}`);
     }
   }
-  salvarMemoria(memoria);
+  try {
+    salvarMemoria(memoria);
+  } catch (e) {
+    console.error(`Erro ao salvar memória: ${e.message}`);
+  }
 }
 
 // ─────────────────────────────────────────
@@ -406,7 +437,12 @@ function simularLimpeza() {
 }
 
 function limparTudo() {
-  PropertiesService.getScriptProperties().deleteProperty('EMAIL_MEMORIA');
+  const props       = PropertiesService.getScriptProperties();
+  const totalChunks = parseInt(props.getProperty(MEMORIA_CHAVE_CHUNKS) || '0', 10);
+  for (let i = 0; i < totalChunks; i++) {
+    props.deleteProperty(`${MEMORIA_CHAVE_PREFIXO}_${i}`);
+  }
+  props.deleteProperty(MEMORIA_CHAVE_CHUNKS);
   console.log('Memória limpa.');
 }
 function importarMemoria() {
@@ -418,4 +454,20 @@ function importarMemoria() {
   PropertiesService.getScriptProperties().setProperty('EMAIL_MEMORIA_4', 'e":"media","estrela":true},{"tokens":{"dominio":"canalmeio.com.br","palavras":["mendonça","cpi","inss","quebram","sigilos","lulinha"]},"categoria":"Leituras & Newsletters","prioridade":"media","estrela":true},{"tokens":{"dominio":"uber.com","palavras":["antônio","indo","para","trabalho","escola","use","moto"]},"categoria":"Transporte","prioridade":"media","estrela":true},{"tokens":{"dominio":"quora.com","palavras":["espagnol","est","seule","langue","avec","deux","verbes","être","deux","verbes","avoir"]},"categoria":"Leituras & Newsletters","prioridade":"media","estrela":true},{"tokens":{"dominio":"newsbox.noticiasaominutobr.com","palavras":["zema","nikolas","são","criticados","por","tragédias","comprovantes","para","devem","ser","enviados","até","hoje","bbb"]},"categoria":"Notícias","prioridade":"baixa","estrela":false},{"tokens":{"dominio":"wordpress.com","palavras":["estado","empregador","quanto","pesam","funcionários","públicos","mercado","trabalho","dos","eua","brasil"]},"categoria":"Leituras & Newsletters","prioridade":"media","estrela":true},{"tokens":{"dominio":"veduca.org","palavras":["mercado","livre","abriu","vagas","todo","brasil"]},"categoria":"Cursos & Vagas","prioridade":"media","estrela":true},{"tokens":{"dominio":"google.com","palavras":["summary","failures","for","google","apps","script","propostas"]},"categoria":"Sistemas & Segurança","prioridade":"alta","estrela":true},{"tokens":{"dominio":"google.com","palavras":["summary","failures","for","google","apps","script","contratos","estagiarios"]},"categoria":"Sistemas & Segurança","prioridade":"alta","estrela":true},{"tokens":{"dominio":"steampowered.com","palavras":["baldur","gate","outros","itens","sua","lista","desejos","estão","oferta"]},"categoria":"Compras & Recibos","prioridade":"alta","estrela":true},{"tokens":{"dominio":"email.openai.com","palavras":["experimente","novo","visual","sem","compromisso"]},"categoria":"Apps & Estudos","prioridade":"baixa","estrela":false},{"tokens":{"dominio":"news.termius.com","palavras":["termius","february","news","tips","for","using","agents"]},"categoria":"Promoções","prioridade":"baixa","estrela":false},{"tokens":{"dominio":"novidades.serasa.com.br","palavras":["antônio","avance","jogo","vida","financeira"]},"categoria":"Promoções","prioridade":"baixa","estrela":false},{"tokens":{"dominio":"unique.ucicinemas.com.br","palavras":["pandora","chamas","vem","ver","filme","semana","uci"]},"categoria":"Promoções","prioridade":"baixa","estrela":false},{"tokens":{"dominio":"amazon.com.br","palavras":["melhores","descontos","dia","ebooks"]},"categoria":"Compras & Recibos","prioridade":"alta","estrela":true},{"tokens":{"dominio":"email3.gog.com","palavras":["your","exclusive","discount","zqqhxpaup","ekurh"]},"categoria":"Compras & Recibos","prioridade":"alta","estrela":true},{"tokens":{"dominio":"newsbox.noticiasaominutobr.com","palavras":["cpi","inss","aprova","quebra","sigilo","lulinha","parlamentares","trocam","socos","humorista","sofre","acidente","está","coma","mulher"]},"categoria":"Notícias","prioridade":"baixa","estrela":false},{"tokens":{"dominio":"mail.crunchyroll.com","palavras":["reminder","payment","update","needed"]},"categoria":"Promoções","prioridade":"baixa","estrela":false},{"tokens":{"dominio":"emkt.ze.delivery","palavras":["lollabr","confira","atrações","palco","budweiser"]},"categoria":"Promoções","prioridade":"baixa","estrela":false},{"tokens":{"dominio":"brasilcard.net","palavras":["olá","antonio","sua","fatura","brasilcard","chegou"]},"categoria":"Finanças","prioridade":"alta","estrela":true},{"tokens":{"dominio":"newskmdevantagens.com.br","palavras":["off","superquinta","kmv"]},"categoria":"Promoções","prioridade":"baixa","estrela":false},{"tokens":{"dominio":"veduca.org","palavras":["hospital","einstein","abriu","vagas","sem","experiência","home","office"]},"categoria":"Cursos & Vagas","prioridade":"media","estrela":true},{"tokens":{"dominio":"novidades.serasa.com.br","palavras":["pague","menos","dia","descubra","quem","consultou","seu","cpf"]},"categoria":"Promoções","prioridade":"baixa","estrela":false},{"tokens":{"dominio":"zoxnews.net","palavras":["seu","crédito","foi","enviado","hoje"]},"categoria":"Finanças","prioridade":"alta","estrela":true},{"tokens":{"dominio":"imprensa.com","palavras":["crédito","para","comprar","mais","prazo","para","pagar"]},"categoria":"Promoções","prioridade":"baixa","estrela":false}]');
   PropertiesService.getScriptProperties().setProperty('EMAIL_MEMORIA_CHUNKS', String(chunks));
   console.log("Memória importada: 200 entradas em 5 chunks");
+}
+
+// ─────────────────────────────────────────
+// EXPORTS (somente para testes locais com Jest — no runtime do Apps
+// Script "module" nao existe, entao este bloco nunca roda por la)
+// ─────────────────────────────────────────
+if (typeof module !== 'undefined') {
+  module.exports = {
+    carregarMemoria,
+    salvarMemoria,
+    limparTudo,
+    extrairTokens,
+    calcularSimilaridade,
+    consultarKNN,
+    classificarEmail,
+  };
 }
