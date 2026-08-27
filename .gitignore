@@ -1,1 +1,13 @@
-CLAUDE.md
+# Dependencias locais (nunca instaladas globalmente/no sistema)
+node_modules/
+
+# Credenciais e config especifica de ambiente (Fator III - Twelve-Factor)
+.clasp.json
+.clasprc.json
+.env
+.env.local
+
+# Build/coverage
+dist/
+coverage/
+*.log
