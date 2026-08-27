@@ -13,32 +13,31 @@ Não é necessário instalar nada globalmente: todas as dependências (`clasp`, 
 
 Análise de [`src/Código.js`](src/Código.js) como foi clonado do Apps Script, antes de qualquer alteração. Três problemas — provavelmente combinados — explicam o script ter parado de categorizar/arquivar e-mails novos:
 
-### Bug A — `salvarMemoria` estoura o limite de tamanho do PropertiesService (causa mais provável da parada total)
+### Bug A — `salvarMemoria` estourava o limite de tamanho do PropertiesService (causa mais provável da parada total) — ✅ corrigido
 
-`salvarMemoria` (linhas 100-104) grava a memória de classificação inteira (até `MAX_MEMORIA = 500` entradas) numa única Script Property (`EMAIL_MEMORIA`). O Apps Script limita cada valor de propriedade a 9KB. A própria função `importarMemoria` (linhas 412-420) existe porque alguém já bateu nesse limite antes: ela importa 200 entradas manualmente **divididas em 5 chunks** (`EMAIL_MEMORIA_0`..`_4`) — só que `carregarMemoria`/`salvarMemoria` nunca leem essas chaves, só `EMAIL_MEMORIA`. A gravação real (não fragmentada) provavelmente excede 9KB rapidamente, `setProperty` lança exceção, e essa chamada fica **fora** do `try/catch` de `categorizarEmailsNovos` (linhas 218-233) — o catch só envolve `processarThread`, não `salvarMemoria`. Isso derruba a execução inteira do trigger.
+`salvarMemoria` gravava a memória de classificação inteira (até `MAX_MEMORIA = 500` entradas) numa única Script Property (`EMAIL_MEMORIA`). O Apps Script limita cada valor de propriedade a 9KB. A própria função `importarMemoria` existe porque alguém já bateu nesse limite antes: ela importa 200 entradas manualmente **divididas em 5 chunks** (`EMAIL_MEMORIA_0`..`_4`) — só que `carregarMemoria`/`salvarMemoria` nunca liam essas chaves, só `EMAIL_MEMORIA`. A gravação real (não fragmentada) provavelmente excedia 9KB rapidamente, `setProperty` lançava exceção, e essa chamada ficava **fora** do `try/catch` de `categorizarEmailsNovos` — o catch só envolvia `processarThread`, não `salvarMemoria`. Isso derrubava a execução inteira do trigger.
 
 **Evidência**: nos próprios dados importados em `importarMemoria`, várias entradas são e-mails do próprio Google com assunto "summary of failures for Google Apps Script" — ou seja, o script já vinha recebendo avisos de falha recorrente do trigger. O Apps Script desabilita automaticamente um trigger depois de falhar repetidamente, o que bate com "o script parou de funcionar".
 
-**Correção proposta**: gravar a memória em chunks (como `importarMemoria` já faz manualmente) e envolver `salvarMemoria` em `try/catch` para nunca derrubar o trigger inteiro.
+**Correção aplicada**: `carregarMemoria`/`salvarMemoria` agora gravam em chunks (mesmo formato que `importarMemoria` já usava manualmente), `limparTudo` apaga os chunks certos, e a chamada a `salvarMemoria` dentro de `categorizarEmailsNovos` ganhou `try/catch`. Testes em [`test/memoria.test.ts`](test/memoria.test.ts).
 
-### Bug B — throughput muito abaixo do volume real de e-mails
+### Bug B — throughput muito abaixo do volume real de e-mails, e nunca tocava no backlog — ✅ corrigido
 
-O comentário e o log dizem "a cada 10 min" (linhas 215 e 374), mas o trigger real criado em `configurarTriggers` (linhas 367-368) roda **uma vez por dia**, às 8h. Cada execução processa no máximo **50 threads** (linha 221: `GmailApp.search(..., 0, 50)`). Se chegam mais de 50 e-mails novos num dia, o excedente nunca é sequer tentado — fica acumulando na inbox.
+O comentário e o log diziam "a cada 10 min", mas o trigger real criado em `configurarTriggers` rodava **uma vez por dia**, às 8h, e cada execução processava no máximo **50 threads**. Além disso, a busca filtrava por `after:` (últimas 24h) — ou seja, mesmo sem bug nenhum, o agente **nunca conseguiria processar o backlog de e-mails antigos**, só e-mails novos.
 
-**Correção proposta**: trigger a cada 10 min de fato (como o código já diz que faz) e paginação da busca em vez de truncar em 50 (mesmo padrão `do/while` já usado em `arquivarEmailsLidos`).
+**Correção aplicada**: trigger passou a `everyMinutes(10)`; a busca por data foi trocada por exclusão das threads que já têm alguma label de categoria (`construirQueryNaoProcessados`), o que também deixa o agente processar o backlog aos poucos; e a busca agora pagina em lotes de 100 com um teto de 300 threads/execução (evita estourar o limite de 6 min do Apps Script). Testes em [`test/categorizacao.test.ts`](test/categorizacao.test.ts).
 
-### Bug C — memória "importada" nunca é usada
+### Bug C — memória "importada" nunca era usada — ✅ corrigido como efeito colateral do Bug A
 
-Consequência direta do Bug A: como `EMAIL_MEMORIA_0..4` nunca é lido pelo código real, o k-NN roda praticamente sempre a frio, caindo sempre no fallback de regras fixas em vez de aprender com o histórico.
+Consequência direta do Bug A: como `EMAIL_MEMORIA_0..4` nunca era lido pelo código real, o k-NN rodava praticamente sempre a frio, caindo sempre no fallback de regras fixas em vez de aprender com o histórico. Como o novo formato de `carregarMemoria`/`salvarMemoria` usa exatamente as mesmas chaves que `importarMemoria` já escrevia, as 200 entradas antigas passaram a ser lidas automaticamente — sem migração separada.
 
-**Correção proposta**: depois do fix do Bug A, migrar os dados de `EMAIL_MEMORIA_0..4` para o novo formato, para não perder as 200 entradas já existentes.
+### Status
 
-### Plano de trabalho
-
-1. Corrigir Bug A (gravação em chunks + `try/catch`), com testes.
-2. Corrigir Bug B (trigger de 10 em 10 min + paginação), com testes.
-3. Migrar a memória já importada para o novo formato.
-4. Cobertura de testes: `extrairTokens`, `calcularSimilaridade`, `consultarKNN` e `classificarEmail` já são funções puras (sem `GmailApp`/`PropertiesService` direto) — testáveis com Jest sem mock nenhum. As demais (`aplicarCategoria`, `arquivarEmailsLidos` etc.) exigem mockar `GmailApp`/`PropertiesService`/`ScriptApp`.
+- [x] Bug A — memória em chunks + `try/catch`
+- [x] Bug B — trigger de 10 em 10 min, paginação, processamento do backlog
+- [x] Bug C — resolvido junto com o Bug A
+- [ ] Rodar `configurarTriggers()` de novo em produção (recria os triggers com o novo intervalo)
+- [ ] Acompanhar as primeiras execuções reais para confirmar que o backlog está sendo processado sem estourar o limite de execução
 
 ## Configuração do ambiente
 
