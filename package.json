@@ -1,0 +1,26 @@
+{
+  "name": "neuro-e-mail-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agente de e-mail (Google Apps Script) para triagem automatica da caixa de entrada.",
+  "scripts": {
+    "login": "clasp login",
+    "clone": "clasp clone",
+    "pull": "clasp pull",
+    "push": "clasp push",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test --ext .ts",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@google/clasp": "^2.4.2",
+    "@types/google-apps-script": "^1.0.83",
+    "@types/jest": "^29.5.12",
+    "@typescript-eslint/eslint-plugin": "^7.7.0",
+    "@typescript-eslint/parser": "^7.7.0",
+    "eslint": "^8.57.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.4.5"
+  }
+}

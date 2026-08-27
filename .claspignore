@@ -1,0 +1,23 @@
+# Nada disso deve ser enviado ao Google via `clasp push` -
+# sao arquivos de tooling/infra do repositorio, nao do script.
+**/**
+!src/**/*.ts
+!appsscript.json
+
+.clasp.json
+.clasp.json.example
+.claspignore
+.env
+.env.example
+.git/**
+.github/**
+.gitignore
+.nvmrc
+CLAUDE.md
+README.md
+node_modules/**
+package.json
+package-lock.json
+tsconfig.json
+test/**
+dist/**
