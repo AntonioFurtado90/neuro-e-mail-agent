@@ -234,6 +234,7 @@ function processarThread(thread, memoria) {
     categoria:  resultado.categoria,
     prioridade: resultado.prioridade,
     estrela:    resultado.estrela,
+    threadId:   thread.getId(),
   });
 
   return resultado;
@@ -393,12 +394,81 @@ function aprovarLimpezaFinanceira() {
 }
 
 // ─────────────────────────────────────────
-// ROTINA SEMANAL — chama arquivo + limpeza
+// FEEDBACK DO USUÁRIO — aprendizado real, nao so auto-reforco
+// ─────────────────────────────────────────
+
+// Compara o que foi gravado na memoria com o estado real e atual da
+// thread no Gmail. Se o usuario mudou algo manualmente depois da
+// classificacao automatica, isso e um sinal de correcao de verdade -
+// bem mais confiavel que o proprio classificador. Retorna null quando
+// nada mudou. Conservador: se a label de categoria so foi removida
+// (sem outra no lugar), nao tenta adivinhar uma categoria nova.
+function detectarCorrecao(registro, estadoAtual) {
+  const categoriasConhecidas = Object.keys(PRIORIDADE_PADRAO);
+  const categoriaAtual = estadoAtual.categorias.find(c => categoriasConhecidas.includes(c));
+
+  const categoriaMudou   = Boolean(categoriaAtual) && categoriaAtual !== registro.categoria;
+  const importanciaMudou = estadoAtual.importante !== (registro.prioridade === 'alta');
+  const estrelaMudou     = estadoAtual.estrela !== registro.estrela;
+
+  if (!categoriaMudou && !importanciaMudou && !estrelaMudou) return null;
+
+  return {
+    categoria:  categoriaMudou ? categoriaAtual : registro.categoria,
+    prioridade: importanciaMudou ? (estadoAtual.importante ? 'alta' : 'baixa') : registro.prioridade,
+    estrela:    estadoAtual.estrela,
+  };
+}
+
+// So atualiza a MEMORIA - nunca reaplica nada no Gmail. O estado atual
+// da thread ja e a correcao feita pelo usuario; a funcao so precisa
+// aprender com ela para classificacoes futuras.
+function revisarFeedback() {
+  const memoria = carregarMemoria();
+  let corrigidos = 0;
+
+  memoria.forEach((registro, i) => {
+    if (!registro.threadId) return;
+
+    let thread;
+    try {
+      thread = GmailApp.getThreadById(registro.threadId);
+    } catch (e) {
+      return;
+    }
+    if (!thread) return;
+
+    const estadoAtual = {
+      categorias: thread.getLabels().map(l => l.getName()),
+      importante: thread.isImportant(),
+      estrela:    thread.getMessages().some(m => m.isStarred()),
+    };
+
+    const correcao = detectarCorrecao(registro, estadoAtual);
+    if (correcao) {
+      memoria[i] = { ...registro, ...correcao };
+      corrigidos++;
+    }
+  });
+
+  if (corrigidos) {
+    try {
+      salvarMemoria(memoria);
+    } catch (e) {
+      console.error(`Erro ao salvar memória: ${e.message}`);
+    }
+  }
+  console.log(`✅ Revisão de feedback: ${corrigidos} correção(ões) aplicada(s) à memória`);
+}
+
+// ─────────────────────────────────────────
+// ROTINA SEMANAL — chama arquivo + limpeza + revisao de feedback
 // ─────────────────────────────────────────
 
 function rodinaSemanal() {
   arquivarEmailsLidos();
   limparEmailsAntigos();
+  revisarFeedback();
 }
 
 // ─────────────────────────────────────────
@@ -489,5 +559,7 @@ if (typeof module !== 'undefined') {
     classificarEmail,
     construirQueryNaoProcessados,
     categorizarEmailsNovos,
+    detectarCorrecao,
+    revisarFeedback,
   };
 }
