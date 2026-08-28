@@ -18,8 +18,29 @@ const K_VIZINHOS       = 3;     // vizinhos no k-NN
 const MIN_SIMILARIDADE = 0.25;  // limiar mínimo para usar memória
 const MAX_MEMORIA      = 500;   // máx de entradas na memória
 
-const DIAS_ARQUIVAR    = 30;    // dias após leitura para arquivar
-const DIAS_LIXEIRA     = 180;   // dias sem leitura para apagar
+const DIAS_ARQUIVAR       = 30;    // dias após leitura para arquivar
+const DIAS_LIXEIRA_PADRAO = 180;   // dias sem leitura para apagar (categorias com aviso previo)
+
+// Prazo por categoria para as categorias sem aviso (CATEGORIAS_LIXEIRA).
+// Categorias fora deste mapa usam DIAS_LIXEIRA_PADRAO.
+const DIAS_LIXEIRA_POR_CATEGORIA = {
+  'Promoções':              30,
+  'Notícias':                30,
+  'Redes Sociais':          30,
+  'Entretenimento':          30,
+  'Apps & Estudos':          30,
+  'Leituras & Newsletters': 60,
+  'Cursos & Vagas':          60,
+};
+
+function diasLixeiraPara(categoria) {
+  return DIAS_LIXEIRA_POR_CATEGORIA[categoria] || DIAS_LIXEIRA_PADRAO;
+}
+
+function calcularDataCorte(dias) {
+  const corte = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
+  return Utilities.formatDate(corte, Session.getScriptTimeZone(), 'yyyy/MM/dd');
+}
 
 // ─────────────────────────────────────────
 // REGRAS FIXAS (fallback do k-NN)
@@ -77,7 +98,7 @@ const PRIORIDADE_PADRAO = {
 // POLÍTICA DE LIMPEZA
 // ─────────────────────────────────────────
 
-// Apagados direto após DIAS_LIXEIRA sem leitura
+// Apagados direto apos o prazo de DIAS_LIXEIRA_POR_CATEGORIA (ver diasLixeiraPara)
 const CATEGORIAS_LIXEIRA = [
   'Promoções', 'Notícias', 'Redes Sociais',
   'Apps & Estudos', 'Entretenimento',
@@ -314,15 +335,12 @@ function arquivarEmailsLidos() {
 // ─────────────────────────────────────────
 
 function limparEmailsAntigos() {
-  const corte     = new Date(Date.now() - DIAS_LIXEIRA * 24 * 60 * 60 * 1000);
-  const dataCorte = Utilities.formatDate(corte, Session.getScriptTimeZone(), 'yyyy/MM/dd');
-  console.log(`Limpeza — corte: ${dataCorte}`);
-
   let totalLixeira = 0;
   const filaAviso  = [];
 
-  // Categorias direto para lixeira
+  // Categorias direto para lixeira — prazo proprio por categoria
   for (const categoria of CATEGORIAS_LIXEIRA) {
+    const dataCorte = calcularDataCorte(diasLixeiraPara(categoria));
     const query = `label:"${categoria}" is:unread before:${dataCorte} -in:trash`;
     let lote;
     do {
@@ -334,9 +352,10 @@ function limparEmailsAntigos() {
     } while (lote.length === 100);
   }
 
-  // Categorias que geram aviso
+  // Categorias que geram aviso — prazo unico (DIAS_LIXEIRA_PADRAO)
+  const dataCorteAviso = calcularDataCorte(DIAS_LIXEIRA_PADRAO);
   for (const categoria of CATEGORIAS_AVISAR) {
-    const query   = `label:"${categoria}" is:unread before:${dataCorte} -in:trash`;
+    const query   = `label:"${categoria}" is:unread before:${dataCorteAviso} -in:trash`;
     const amostra = GmailApp.search(query, 0, 50);
     if (!amostra.length) continue;
 
@@ -352,11 +371,11 @@ function limparEmailsAntigos() {
     const totalAviso = filaAviso.reduce((s, f) => s + f.total, 0);
     const usuario    = Session.getActiveUser().getEmail();
     let corpo = `Antônio,\n\n`;
-    corpo    += `${totalAviso} e-mail(s) não lidos com mais de ${DIAS_LIXEIRA} dias aguardam decisão.\n\n`;
+    corpo    += `${totalAviso} e-mail(s) não lidos com mais de ${DIAS_LIXEIRA_PADRAO} dias aguardam decisão.\n\n`;
     corpo    += `━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
     for (const { categoria, total, exemplos } of filaAviso) {
-      corpo += `📂 ${categoria} — ${total} e-mail(s) antes de ${dataCorte}\n`;
+      corpo += `📂 ${categoria} — ${total} e-mail(s) antes de ${dataCorteAviso}\n`;
       corpo += exemplos.join('\n');
       if (total > 5) corpo += `\n  ... e mais ${total - 5}`;
       corpo += `\n\n`;
@@ -374,8 +393,7 @@ function limparEmailsAntigos() {
 
 // Executar após receber o e-mail de aviso
 function aprovarLimpezaFinanceira() {
-  const corte     = new Date(Date.now() - DIAS_LIXEIRA * 24 * 60 * 60 * 1000);
-  const dataCorte = Utilities.formatDate(corte, Session.getScriptTimeZone(), 'yyyy/MM/dd');
+  const dataCorte = calcularDataCorte(DIAS_LIXEIRA_PADRAO);
   let total = 0;
 
   for (const categoria of CATEGORIAS_AVISAR) {
@@ -505,21 +523,20 @@ function verMemoria() {
 }
 
 function simularLimpeza() {
-  const corte     = new Date(Date.now() - DIAS_LIXEIRA * 24 * 60 * 60 * 1000);
-  const dataCorte = Utilities.formatDate(corte, Session.getScriptTimeZone(), 'yyyy/MM/dd');
-  const corteArq  = new Date(Date.now() - DIAS_ARQUIVAR * 24 * 60 * 60 * 1000);
-  const dataArq   = Utilities.formatDate(corteArq, Session.getScriptTimeZone(), 'yyyy/MM/dd');
+  const corteArq = new Date(Date.now() - DIAS_ARQUIVAR * 24 * 60 * 60 * 1000);
+  const dataArq  = Utilities.formatDate(corteArq, Session.getScriptTimeZone(), 'yyyy/MM/dd');
 
   console.log(`=== SIMULAÇÃO ===`);
   console.log(`Arquivar lidos antes de: ${dataArq}`);
   const lidos = GmailApp.search(`in:inbox is:read before:${dataArq} -in:trash`, 0, 500).length;
   console.log(`  → ${lidos} threads seriam arquivadas\n`);
 
-  console.log(`Apagar não lidos antes de: ${dataCorte}`);
+  console.log(`Apagar não lidos (prazo varia por categoria):`);
   for (const cat of [...CATEGORIAS_LIXEIRA, ...CATEGORIAS_AVISAR]) {
+    const dataCorte = calcularDataCorte(CATEGORIAS_AVISAR.includes(cat) ? DIAS_LIXEIRA_PADRAO : diasLixeiraPara(cat));
     const n   = GmailApp.search(`label:"${cat}" is:unread before:${dataCorte} -in:trash`, 0, 500).length;
     const ico = CATEGORIAS_AVISAR.includes(cat) ? '⚠️  AVISO  ' : '🗑️  LIXEIRA';
-    if (n > 0) console.log(`  ${ico} | ${cat}: ${n}`);
+    if (n > 0) console.log(`  ${ico} | ${cat}: ${n} (antes de ${dataCorte})`);
   }
   console.log('\n(Nada foi alterado)');
 }
@@ -561,5 +578,8 @@ if (typeof module !== 'undefined') {
     categorizarEmailsNovos,
     detectarCorrecao,
     revisarFeedback,
+    diasLixeiraPara,
+    calcularDataCorte,
+    limparEmailsAntigos,
   };
 }
