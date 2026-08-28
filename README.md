@@ -37,23 +37,19 @@ Consequência direta do Bug A: como `EMAIL_MEMORIA_0..4` nunca era lido pelo có
 - [x] Bug B — trigger de 10 em 10 min, paginação, processamento do backlog
 - [x] Bug C — resolvido junto com o Bug A
 - [x] `clasp push` — correções já enviadas para o Apps Script real
+- [x] Item 1 — cobertura de testes das funções puras do classificador
+- [x] Item 2.1 — aprendizado por feedback real do usuário (`revisarFeedback`)
 - [ ] Rodar `configurarTriggers()` de novo em produção (só enviar o código não recria triggers já agendados)
 - [ ] Acompanhar as primeiras execuções reais para confirmar que o backlog está sendo processado sem estourar o limite de execução
 
 ## Próximas etapas
 
-### 1. Cobertura de testes das funções puras do classificador
+Revisão do projeto contra a dor real do usuário — objetivo declarado: *"um classificador de e-mails com um algoritmo que aprenda o que é importante e o que não é, e faça a exclusão dos e-mails desnecessários"*. Gaps de produto encontrados (não são bugs):
 
-`extrairTokens`, `calcularSimilaridade`, `consultarKNN` e `classificarEmail` ainda não têm teste dedicado — só são exercitadas indiretamente pelos testes de `categorizarEmailsNovos`. Faltam casos como: extração de domínio/palavras com acentos e remetentes malformados, empate e desempate no k-NN, limiar de similaridade (`MIN_SIMILARIDADE`), e a ordem de precedência memória → regra → padrão em `classificarEmail`.
-
-### 2. Revisão do projeto contra a dor real do usuário
-
-Objetivo declarado: *"um classificador de e-mails com um algoritmo que aprenda o que é importante e o que não é, e faça a exclusão dos e-mails desnecessários"*. Comparando com o código atual, há gaps de produto (não são bugs) que valem discussão antes de virar código:
-
-- **O "aprendizado" hoje é auto-reforço, não feedback do usuário.** A memória k-NN só grava o que o próprio classificador decidiu (regra fixa ou vizinho anterior) — nunca captura uma correção real do usuário (ex.: você move um e-mail pra outra categoria, ou abre/estrela algo marcado como baixa prioridade). Isso generaliza as `REGRAS` fixas por similaridade textual, mas não aprende a preferência pessoal de verdade.
-- **Política de exclusão é única e conservadora.** `DIAS_LIXEIRA = 180` vale igual pra todas as categorias da lixeira. Boa parte de Promoções/Notícias provavelmente poderia ser excluída bem mais cedo (ex.: 15-30 dias) sem perda real.
-- **A memória é opaca.** Fica como JSON dentro do Script Properties — o usuário não consegue ver ou corrigir o que o algoritmo aprendeu.
-- **Nada reduz o volume futuro.** O script só limpa o que já chegou; não há nenhuma ajuda para identificar remetentes crônicos de baixo valor e cancelar inscrição (`List-Unsubscribe`).
+- [x] **2.1 — O "aprendizado" era auto-reforço, não feedback do usuário.** Corrigido: `revisarFeedback()` compara o que foi gravado com o estado real da thread (categoria/importância/estrela) e atualiza a memória quando o usuário corrigiu algo manualmente.
+- [ ] **2.2 — Política de exclusão é única e conservadora.** `DIAS_LIXEIRA = 180` vale igual pra todas as categorias da lixeira. Boa parte de Promoções/Notícias provavelmente poderia ser excluída bem mais cedo (ex.: 15-30 dias) sem perda real.
+- [ ] **2.3 — A memória é opaca.** Fica como JSON dentro do Script Properties — o usuário não consegue ver ou corrigir o que o algoritmo aprendeu.
+- [ ] **2.4 — Nada reduz o volume futuro.** O script só limpa o que já chegou; não há nenhuma ajuda para identificar remetentes crônicos de baixo valor e cancelar inscrição (`List-Unsubscribe`).
 
 Antes de implementar qualquer um desses, preciso saber qual prioridade faz sentido pra você.
 
