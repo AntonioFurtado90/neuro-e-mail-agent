@@ -39,6 +39,7 @@ Consequência direta do Bug A: como `EMAIL_MEMORIA_0..4` nunca era lido pelo có
 - [x] `clasp push` — correções já enviadas para o Apps Script real
 - [x] Item 1 — cobertura de testes das funções puras do classificador
 - [x] Item 2.1 — aprendizado por feedback real do usuário (`revisarFeedback`)
+- [x] Item 2.2 — prazo de exclusão por categoria
 - [ ] Rodar `configurarTriggers()` de novo em produção (só enviar o código não recria triggers já agendados)
 - [ ] Acompanhar as primeiras execuções reais para confirmar que o backlog está sendo processado sem estourar o limite de execução
 
@@ -47,7 +48,7 @@ Consequência direta do Bug A: como `EMAIL_MEMORIA_0..4` nunca era lido pelo có
 Revisão do projeto contra a dor real do usuário — objetivo declarado: *"um classificador de e-mails com um algoritmo que aprenda o que é importante e o que não é, e faça a exclusão dos e-mails desnecessários"*. Gaps de produto encontrados (não são bugs):
 
 - [x] **2.1 — O "aprendizado" era auto-reforço, não feedback do usuário.** Corrigido: `revisarFeedback()` compara o que foi gravado com o estado real da thread (categoria/importância/estrela) e atualiza a memória quando o usuário corrigiu algo manualmente.
-- [ ] **2.2 — Política de exclusão é única e conservadora.** `DIAS_LIXEIRA = 180` vale igual pra todas as categorias da lixeira. Boa parte de Promoções/Notícias provavelmente poderia ser excluída bem mais cedo (ex.: 15-30 dias) sem perda real.
+- [x] **2.2 — Política de exclusão era única e conservadora.** Corrigido: `DIAS_LIXEIRA_POR_CATEGORIA` define 30 dias para Promoções/Notícias/Redes Sociais/Entretenimento/Apps & Estudos, 60 dias para Leituras & Newsletters/Cursos & Vagas, e mantém 180 dias para as categorias com aviso prévio (Finanças, Compras & Recibos, Sistemas & Segurança, Transporte).
 - [ ] **2.3 — A memória é opaca.** Fica como JSON dentro do Script Properties — o usuário não consegue ver ou corrigir o que o algoritmo aprendeu.
 - [ ] **2.4 — Nada reduz o volume futuro.** O script só limpa o que já chegou; não há nenhuma ajuda para identificar remetentes crônicos de baixo valor e cancelar inscrição (`List-Unsubscribe`).
 
