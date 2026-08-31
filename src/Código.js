@@ -572,6 +572,92 @@ function sincronizarPlanilhaMemoria() {
 }
 
 // ─────────────────────────────────────────
+// REMETENTES CRÔNICOS — sugestao de descadastro (nunca automatico)
+// ─────────────────────────────────────────
+
+const MIN_OCORRENCIAS_CRONICO = 5; // quantas vezes um dominio de baixo valor precisa aparecer na memoria
+const CATEGORIAS_BAIXO_VALOR  = ['Promoções', 'Notícias', 'Redes Sociais', 'Entretenimento', 'Apps & Estudos'];
+const DOMINIOS_SUGERIDOS_PROP = 'DOMINIOS_DESCADASTRO_SUGERIDOS';
+
+// Funcao pura: reaproveita a memoria que ja existe, sem escanear o
+// Gmail de novo, pra achar dominios de baixo valor que aparecem com
+// frequencia.
+function remetentesCronicos(memoria, minOcorrencias) {
+  const contagem = {};
+
+  memoria.forEach(registro => {
+    const dominio = registro.tokens && registro.tokens.dominio;
+    if (!dominio || !CATEGORIAS_BAIXO_VALOR.includes(registro.categoria)) return;
+
+    if (!contagem[dominio]) {
+      contagem[dominio] = { dominio, ocorrencias: 0, categorias: {}, threadIdExemplo: null };
+    }
+    const c = contagem[dominio];
+    c.ocorrencias++;
+    c.categorias[registro.categoria] = (c.categorias[registro.categoria] || 0) + 1;
+    if (!c.threadIdExemplo && registro.threadId) c.threadIdExemplo = registro.threadId;
+  });
+
+  return Object.values(contagem)
+    .filter(c => c.ocorrencias >= minOcorrencias)
+    .map(c => ({
+      dominio: c.dominio,
+      ocorrencias: c.ocorrencias,
+      categoriaMaisComum: Object.entries(c.categorias).sort((a, b) => b[1] - a[1])[0][0],
+      threadIdExemplo: c.threadIdExemplo,
+    }))
+    .sort((a, b) => b.ocorrencias - a.ocorrencias);
+}
+
+// Le o cabecalho List-Unsubscribe (RFC 2369/8058) de uma thread de
+// exemplo do dominio, se existir. Nunca lanca erro - so retorna null
+// quando nao ha link (thread sumida, sem header, etc.).
+function buscarLinkDescadastro(threadId) {
+  if (!threadId) return null;
+  try {
+    const thread = GmailApp.getThreadById(threadId);
+    if (!thread) return null;
+    const header = thread.getMessages()[0].getHeader('List-Unsubscribe');
+    if (!header) return null;
+    const match = header.match(/<([^>]+)>/);
+    return match ? match[1] : header.trim();
+  } catch (e) {
+    return null;
+  }
+}
+
+// So sugere - nunca descadastra sozinho. Cada dominio so gera aviso
+// uma vez (guardado no Script Properties), pra nao virar spam semanal
+// do proprio agente.
+function sugerirDescadastro() {
+  const memoria  = carregarMemoria();
+  const cronicos = remetentesCronicos(memoria, MIN_OCORRENCIAS_CRONICO);
+  if (!cronicos.length) return;
+
+  const props        = PropertiesService.getScriptProperties();
+  const jaSugeridos  = new Set(JSON.parse(props.getProperty(DOMINIOS_SUGERIDOS_PROP) || '[]'));
+  const novos        = cronicos.filter(c => !jaSugeridos.has(c.dominio));
+  if (!novos.length) return;
+
+  const linhas = novos.map(c => {
+    const link = buscarLinkDescadastro(c.threadIdExemplo);
+    return `  • ${c.dominio} — ${c.ocorrencias}x (${c.categoriaMaisComum})`
+      + (link ? `\n    Descadastrar: ${link}` : '');
+  });
+
+  const usuario = Session.getActiveUser().getEmail();
+  const corpo = `Antônio,\n\n`
+    + `Estes remetentes mandaram bastante e-mail de baixo valor (Promoções/Notícias/Redes Sociais/Entretenimento/Apps & Estudos):\n\n`
+    + linhas.join('\n\n')
+    + `\n\n(Essa sugestão só aparece uma vez por remetente — descadastrar é sempre manual, o agente nunca faz isso sozinho.)\n\n— Agente de e-mails`;
+
+  GmailApp.sendEmail(usuario, `[Agente] ${novos.length} remetente(s) crônico(s) de baixo valor`, corpo);
+
+  novos.forEach(c => jaSugeridos.add(c.dominio));
+  props.setProperty(DOMINIOS_SUGERIDOS_PROP, JSON.stringify([...jaSugeridos]));
+}
+
+// ─────────────────────────────────────────
 // ROTINA SEMANAL — chama arquivo + limpeza + revisao de feedback
 // ─────────────────────────────────────────
 
@@ -580,6 +666,7 @@ function rodinaSemanal() {
   limparEmailsAntigos();
   revisarFeedback();
   sincronizarPlanilhaMemoria();
+  sugerirDescadastro();
 }
 
 // ─────────────────────────────────────────
@@ -675,5 +762,8 @@ if (typeof module !== 'undefined') {
     calcularDataCorte,
     limparEmailsAntigos,
     sincronizarPlanilhaMemoria,
+    remetentesCronicos,
+    buscarLinkDescadastro,
+    sugerirDescadastro,
   };
 }
