@@ -42,7 +42,7 @@ Consequência direta do Bug A: como `EMAIL_MEMORIA_0..4` nunca era lido pelo có
 - [x] Item 2.2 — prazo de exclusão por categoria
 - [x] Item 2.3 — memória visível e editável via Google Sheets
 - [x] Item 2.4 — sugestão de descadastro de remetentes crônicos
-- [ ] Rodar `configurarTriggers()` de novo em produção (só enviar o código não recria triggers já agendados)
+- [x] Rodar `configurarTriggers()` de novo em produção — confirmado em execução real (18:45): `categorizarEmailsNovos` a cada 10 min, `rodinaSemanal` aos domingos às 3h
 - [ ] Acompanhar as primeiras execuções reais para confirmar que o backlog está sendo processado sem estourar o limite de execução
 - [ ] Depois da primeira `rodinaSemanal()` real, conferir a planilha "Neuro — Memória do classificador" que é criada automaticamente na sua Google Drive
 
