@@ -303,6 +303,27 @@ function categorizarEmailsNovos() {
   if (processados) console.log(`✅ ${processados} thread(s) categorizada(s)`);
 }
 
+// Busca e aplica `acao` em lotes, respeitando um orcamento maximo de
+// threads para a chamada inteira (pode ser compartilhado entre varias
+// buscas, ex.: varias categorias na mesma execucao) - sem isso, uma
+// unica funcao processando um backlog grande estoura o limite de 6
+// min de execucao do Apps Script.
+function processarEmLotes(query, acao, orcamento) {
+  let processados = 0;
+  let lote;
+  let tamanho;
+  do {
+    tamanho = Math.min(LOTE_TAMANHO, orcamento - processados);
+    if (tamanho <= 0) break;
+    lote = GmailApp.search(query, 0, tamanho);
+    if (!lote.length) break;
+    acao(lote);
+    processados += lote.length;
+    Utilities.sleep(300);
+  } while (lote.length === tamanho && processados < orcamento);
+  return processados;
+}
+
 // ─────────────────────────────────────────
 // FASE 2 — ARQUIVAR LIDOS (semanal)
 // ─────────────────────────────────────────
@@ -313,18 +334,9 @@ function arquivarEmailsLidos() {
   console.log(`Arquivando lidos antes de ${dataCorte}...`);
 
   // is:read = lidos; in:inbox = ainda na inbox (não arquivados)
-  const query   = `in:inbox is:read before:${dataCorte} -in:trash`;
-  let total     = 0;
-  let lote;
-
-  do {
-    lote = GmailApp.search(query, 0, 100);
-    if (!lote.length) break;
-    // moveThreadsToArchive remove o label INBOX sem apagar
-    GmailApp.moveThreadsToArchive(lote);
-    total += lote.length;
-    Utilities.sleep(300);
-  } while (lote.length === 100);
+  const query = `in:inbox is:read before:${dataCorte} -in:trash`;
+  // moveThreadsToArchive remove o label INBOX sem apagar
+  const total = processarEmLotes(query, lote => GmailApp.moveThreadsToArchive(lote), MAX_THREADS_POR_EXECUCAO);
 
   console.log(`✅ Arquivados: ${total} threads lidas com mais de ${DIAS_ARQUIVAR} dias`);
   return total;
@@ -336,20 +348,19 @@ function arquivarEmailsLidos() {
 
 function limparEmailsAntigos() {
   let totalLixeira = 0;
+  let orcamento    = MAX_THREADS_POR_EXECUCAO;
   const filaAviso  = [];
 
-  // Categorias direto para lixeira — prazo proprio por categoria
+  // Categorias direto para lixeira — prazo proprio por categoria.
+  // Orcamento e' somado entre TODAS as categorias nesta execucao, nao
+  // por categoria (senao 7 categorias x teto ainda estouraria os 6 min).
   for (const categoria of CATEGORIAS_LIXEIRA) {
+    if (orcamento <= 0) break;
     const dataCorte = calcularDataCorte(diasLixeiraPara(categoria));
     const query = `label:"${categoria}" is:unread before:${dataCorte} -in:trash`;
-    let lote;
-    do {
-      lote = GmailApp.search(query, 0, 100);
-      if (!lote.length) break;
-      GmailApp.moveThreadsToTrash(lote);
-      totalLixeira += lote.length;
-      Utilities.sleep(300);
-    } while (lote.length === 100);
+    const processados = processarEmLotes(query, lote => GmailApp.moveThreadsToTrash(lote), orcamento);
+    totalLixeira += processados;
+    orcamento -= processados;
   }
 
   // Categorias que geram aviso — prazo unico (DIAS_LIXEIRA_PADRAO)
@@ -394,18 +405,15 @@ function limparEmailsAntigos() {
 // Executar após receber o e-mail de aviso
 function aprovarLimpezaFinanceira() {
   const dataCorte = calcularDataCorte(DIAS_LIXEIRA_PADRAO);
-  let total = 0;
+  let total     = 0;
+  let orcamento = MAX_THREADS_POR_EXECUCAO;
 
   for (const categoria of CATEGORIAS_AVISAR) {
+    if (orcamento <= 0) break;
     const query = `label:"${categoria}" is:unread before:${dataCorte} -in:trash`;
-    let lote;
-    do {
-      lote = GmailApp.search(query, 0, 100);
-      if (!lote.length) break;
-      GmailApp.moveThreadsToTrash(lote);
-      total += lote.length;
-      Utilities.sleep(300);
-    } while (lote.length === 100);
+    const processados = processarEmLotes(query, lote => GmailApp.moveThreadsToTrash(lote), orcamento);
+    total += processados;
+    orcamento -= processados;
   }
 
   console.log(`✅ ${total} threads na lixeira. 30 dias para desfazer.`);
@@ -765,5 +773,8 @@ if (typeof module !== 'undefined') {
     remetentesCronicos,
     buscarLinkDescadastro,
     sugerirDescadastro,
+    processarEmLotes,
+    arquivarEmailsLidos,
+    aprovarLimpezaFinanceira,
   };
 }
