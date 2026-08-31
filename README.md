@@ -41,18 +41,19 @@ Consequência direta do Bug A: como `EMAIL_MEMORIA_0..4` nunca era lido pelo có
 - [x] Item 2.1 — aprendizado por feedback real do usuário (`revisarFeedback`)
 - [x] Item 2.2 — prazo de exclusão por categoria
 - [x] Item 2.3 — memória visível e editável via Google Sheets
+- [x] Item 2.4 — sugestão de descadastro de remetentes crônicos
 - [ ] Rodar `configurarTriggers()` de novo em produção (só enviar o código não recria triggers já agendados)
 - [ ] Acompanhar as primeiras execuções reais para confirmar que o backlog está sendo processado sem estourar o limite de execução
 - [ ] Depois da primeira `rodinaSemanal()` real, conferir a planilha "Neuro — Memória do classificador" que é criada automaticamente na sua Google Drive
 
-## Próximas etapas
+## Revisão de produto (concluída)
 
-Revisão do projeto contra a dor real do usuário — objetivo declarado: *"um classificador de e-mails com um algoritmo que aprenda o que é importante e o que não é, e faça a exclusão dos e-mails desnecessários"*. Gaps de produto encontrados (não são bugs):
+Objetivo declarado: *"um classificador de e-mails com um algoritmo que aprenda o que é importante e o que não é, e faça a exclusão dos e-mails desnecessários"*. Os 4 gaps encontrados na revisão inicial (não eram bugs) estão todos endereçados:
 
 - [x] **2.1 — O "aprendizado" era auto-reforço, não feedback do usuário.** Corrigido: `revisarFeedback()` compara o que foi gravado com o estado real da thread (categoria/importância/estrela) e atualiza a memória quando o usuário corrigiu algo manualmente.
 - [x] **2.2 — Política de exclusão era única e conservadora.** Corrigido: `DIAS_LIXEIRA_POR_CATEGORIA` define 30 dias para Promoções/Notícias/Redes Sociais/Entretenimento/Apps & Estudos, 60 dias para Leituras & Newsletters/Cursos & Vagas, e mantém 180 dias para as categorias com aviso prévio (Finanças, Compras & Recibos, Sistemas & Segurança, Transporte).
 - [x] **2.3 — A memória era opaca.** Corrigido: `sincronizarPlanilhaMemoria()` cria/mantém uma Google Sheet com uma linha por entrada da memória. Editar a coluna Categoria/Prioridade/Estrela diretamente na planilha vira uma correção de verdade (mesma lógica do 2.1, só que a origem do sinal é a planilha em vez do Gmail).
-- [ ] **2.4 — Nada reduz o volume futuro.** O script só limpa o que já chegou; não há nenhuma ajuda para identificar remetentes crônicos de baixo valor e cancelar inscrição (`List-Unsubscribe`).
+- [x] **2.4 — Nada reduzia o volume futuro.** Corrigido: `sugerirDescadastro()` identifica remetentes crônicos de baixo valor (reaproveitando a própria memória) e manda um e-mail semanal com o link de descadastro (`List-Unsubscribe`) quando disponível — só sugestão, nunca automático, e cada domínio só é avisado uma vez.
 
 Antes de implementar qualquer um desses, preciso saber qual prioridade faz sentido pra você.
 
