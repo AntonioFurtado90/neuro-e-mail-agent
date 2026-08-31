@@ -480,6 +480,98 @@ function revisarFeedback() {
 }
 
 // ─────────────────────────────────────────
+// PLANILHA DE MEMÓRIA — visibilidade e edicao manual
+// ─────────────────────────────────────────
+
+const PLANILHA_MEMORIA_PROP = 'PLANILHA_MEMORIA_ID';
+const PLANILHA_MEMORIA_ABA  = 'Memória';
+const PLANILHA_CABECALHO    = ['Domínio', 'Palavras-chave', 'Categoria', 'Prioridade', 'Estrela', 'Thread', 'ID (não editar)'];
+
+function obterPlanilhaMemoria() {
+  const props = PropertiesService.getScriptProperties();
+  const id    = props.getProperty(PLANILHA_MEMORIA_PROP);
+
+  let planilha = null;
+  if (id) {
+    try {
+      planilha = SpreadsheetApp.openById(id);
+    } catch (e) {
+      planilha = null;
+    }
+  }
+  if (!planilha) {
+    planilha = SpreadsheetApp.create('Neuro — Memória do classificador');
+    props.setProperty(PLANILHA_MEMORIA_PROP, planilha.getId());
+  }
+
+  return planilha.getSheetByName(PLANILHA_MEMORIA_ABA) || planilha.insertSheet(PLANILHA_MEMORIA_ABA);
+}
+
+// Adapta uma linha da planilha para o mesmo formato de "estado atual"
+// que detectarCorrecao ja espera (reaproveita a logica criada para o
+// feedback via Gmail, so troca a origem do sinal).
+function linhaParaEstadoPlanilha(linha) {
+  const estrelaCelula = linha[4];
+  return {
+    categorias: [linha[2]],
+    importante: linha[3] === 'alta',
+    estrela:    estrelaCelula === true || String(estrelaCelula).toUpperCase() === 'TRUE',
+  };
+}
+
+function sincronizarPlanilhaMemoria() {
+  const aba     = obterPlanilhaMemoria();
+  const memoria = carregarMemoria();
+
+  // 1) Le o que ja esta na planilha e trata edicoes manuais como correcao
+  const totalLinhas = aba.getLastRow() - 1;
+  const linhasAtuais = totalLinhas > 0
+    ? aba.getRange(2, 1, totalLinhas, PLANILHA_CABECALHO.length).getValues()
+    : [];
+  const porThreadId = {};
+  linhasAtuais.forEach(linha => {
+    if (linha[6]) porThreadId[linha[6]] = linha;
+  });
+
+  let corrigidos = 0;
+  memoria.forEach((registro, i) => {
+    const linha = registro.threadId && porThreadId[registro.threadId];
+    if (!linha) return;
+    const correcao = detectarCorrecao(registro, linhaParaEstadoPlanilha(linha));
+    if (correcao) {
+      memoria[i] = { ...registro, ...correcao };
+      corrigidos++;
+    }
+  });
+
+  if (corrigidos) {
+    try {
+      salvarMemoria(memoria);
+    } catch (e) {
+      console.error(`Erro ao salvar memória: ${e.message}`);
+    }
+  }
+
+  // 2) Reescreve a planilha inteira a partir da memoria (ja atualizada)
+  aba.clearContents();
+  aba.appendRow(PLANILHA_CABECALHO);
+  const linhasNovas = memoria.map(registro => [
+    registro.tokens.dominio,
+    registro.tokens.palavras.join(', '),
+    registro.categoria,
+    registro.prioridade,
+    registro.estrela,
+    registro.threadId ? `https://mail.google.com/mail/u/0/#all/${registro.threadId}` : '',
+    registro.threadId || '',
+  ]);
+  if (linhasNovas.length) {
+    aba.getRange(2, 1, linhasNovas.length, PLANILHA_CABECALHO.length).setValues(linhasNovas);
+  }
+
+  console.log(`✅ Planilha de memória sincronizada: ${memoria.length} entrada(s), ${corrigidos} correção(ões) da planilha`);
+}
+
+// ─────────────────────────────────────────
 // ROTINA SEMANAL — chama arquivo + limpeza + revisao de feedback
 // ─────────────────────────────────────────
 
@@ -487,6 +579,7 @@ function rodinaSemanal() {
   arquivarEmailsLidos();
   limparEmailsAntigos();
   revisarFeedback();
+  sincronizarPlanilhaMemoria();
 }
 
 // ─────────────────────────────────────────
@@ -581,5 +674,6 @@ if (typeof module !== 'undefined') {
     diasLixeiraPara,
     calcularDataCorte,
     limparEmailsAntigos,
+    sincronizarPlanilhaMemoria,
   };
 }
